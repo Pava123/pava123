@@ -1,0 +1,94 @@
+Tab Tab1 = instance.ActiveTab;
+//string StrLogin = project.Variables["cnf_vk_login"].Value;
+//string StrPass = project.Variables["cnf_vk_Password"].Value;
+int Colmess =  Convert.ToInt32 (project.Variables["ColMassage"].Value); // переменная число выполнений отправки сообщений
+int TimePause = Convert.ToInt32(project.Variables["TimeColMassage"].Value);// переменная число тайминга паузы для отправки сообщений
+IZennoList ListId =  project.Lists["список id"]; 
+IZennoList ListMessege = project.Lists["Текст Рассылки"];
+IZennoTable AccTable = project.Tables["StrAccaunt"];
+int OnId = ListId.Count;
+string gu = "https://vk.com/id";
+int intRandomElementNumber = new Random().Next(0, ListMessege.Count);
+string StrRandom = ListMessege[intRandomElementNumber];
+SibboraHelper.WebHelper wHelper = new SibboraHelper.WebHelper();
+
+int intAccountRowNum = -1; // переменная для очереди взятия аккаунта 
+//для отлова ошибок
+lock(SyncObjects.TableSyncer){
+// получаем свободный аккаунт
+// цикл переберает строки в таблице для аккаунта со статусом свободен , тоесть строка будет пустая
+for(int i = 0;i < AccTable.RowCount; i++){
+	intAccountRowNum = i;
+		string GetStatus = AccTable.GetCell(4,i);// берем значение ячейки статуса из таблицы
+	if(GetStatus == string.Empty){ //  проверка строки статуса
+		AccTable.SetCell(4,i,"Занят"); //присваеваем значение таблице
+		project.SendInfoToLog(" Взяли в работу  аккаунт " + AccTable.GetCell(0,i), true );
+
+		break;
+		}	
+	}
+}
+//if(intAccountRowNum == -1){  //проверка таблицы на свободные аккаунты 
+		//project.SendErrorToLog("Аккаунты все заняты Завершаем работу");
+		//return "Oke";
+	//}
+// создаю массив из таблицы 
+string[] arrRowFields = AccTable.GetRow(intAccountRowNum).ToArray();
+	if (arrRowFields.Length<4) {
+	project.SendErrorToLog(String.Format("Не удалось получить данные аккаунта из таблицы (строка {0}). Завершаем работу", intAccountRowNum +1));
+	return "oki";	
+}
+	string strLogin = arrRowFields[0];
+	string strPass = arrRowFields[1];
+	string strProxy = arrRowFields[2];
+	string strUserAgent = arrRowFields[3];
+	string strStatus = arrRowFields[4];
+	//обнуление переменной Profile.UserAgent
+	project.Profile.UserAgent = String.Empty;
+	//установка нового user agent
+	project.Profile.UserAgent = strUserAgent;
+	instance.SetProxy(strProxy);
+
+//instance.ClearCache();
+//instance.ClearCookie();
+
+Tab1.Navigate("https://vk.com");
+Tab1.WaitDownloading();
+Tab1.WaitDownloading();
+
+HtmlElement ElBuuton = Tab1.FindElementByXPath("//button[@class = 'index_login_button flat_button button_big_text']",0);
+	if(ElBuuton.IsVoid){
+	project.SendErrorToLog("ошибка нету кнопки логин на сайте");
+		return "erorr";
+	
+	}
+
+//проводим авторизацию акаунта 
+wHelper.SetElementValueXPath(Tab1,false,null,"//input[@name = 'email']",1,strLogin, "Middle" ,false,true);
+wHelper.SetElementValueXPath(Tab1,false,null,"//input[@class = 'big_text']",1, strPass, "Middle" ,false,true);
+wHelper.ClickElementXPath(Tab1,false,null,"//button[@class = 'index_login_button flat_button button_big_text']",0,true);
+wHelper.WaitElementPresenceXPath(Tab1,true,null,"//div[@class = 'side_bar_inner']",0, "present" );
+
+for(int i = 0 ; i< Colmess ; i++ ){
+// переходим на юзера из списка  id
+Tab1.WaitDownloading();
+project.SendInfoToLog("нашли юзеров для рассылки" + OnId);
+string strWorkId = ListId[0];
+Tab1.Navigate(gu+strWorkId);
+
+// отправить сообщение юзеру из списка
+wHelper.ClickElementXPath(Tab1,true,null,"//button[@class = 'flat_button profile_btn_cut_left']",0,true);
+wHelper.ClickElementXPath(Tab1,false,null,"//div[@id = 'mail_box_editable']",0);
+wHelper.SetElementValueXPath(Tab1,false,null ,"//div[@id = 'mail_box_editable']",0,StrRandom, "Middle" ,false,true);
+wHelper.ClickElementXPath(Tab1,false,null,"//button[@id = 'mail_box_send']",0,true);
+ListId.RemoveAt(0);
+project.SendInfoToLog("Сообщение отправлено!  удалили юзера  из списка id и отрпавили сообщение " +StrRandom );
+	System.Threading.Thread.Sleep(TimePause);
+
+
+
+return "ok" ;
+}
+
+
+

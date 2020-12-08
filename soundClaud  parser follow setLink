@@ -1,0 +1,207 @@
+SibboraHelper.WebHelper wHelper =  new SibboraHelper.WebHelper();
+Tab Tab1 = instance.ActiveTab;
+int ColFolowww =  Convert.ToInt32 (project.Variables["ColFolow"].Value); // переменная число выполнений отправки сообщений
+int TimePause = Convert.ToInt32(project.Variables["TimeColFolow"].Value);// переменная число тайминга паузы для отправки сообщений
+IZennoTable bazaAcc = project.Tables["accTable"];
+IZennoList ListFolow = project.Lists["linkFoloww"];
+bool FillLink = Convert.ToBoolean(project.Variables["SetLink"].Value);
+bool Parser = Convert.ToBoolean(project.Variables["ParserOn"].Value);
+
+// перепменные для парсера 
+string more = project.Variables["intScroll"].Value; // привзяались к листу  
+int bigmore = Convert.ToInt32(more); //конвертировали строковое число в инт
+string Linkes = project.Variables["idPArs"].Value;
+IZennoTable tblResult = project.Tables["qq"];
+	
+
+
+int intAccountRowNum = -1; // переменная для очереди взятия аккаунта 
+//для отлова ошибок
+ // проверка времени работы локера 
+lock(SyncObjects.TableSyncer){
+// получаем свободный аккаунт
+// цикл переберает строки в таблице для аккаунта со статусом свободен , тоесть строка будет пустая
+for(int i = 0;i < bazaAcc.RowCount; i++){
+	intAccountRowNum = i;
+		string GetStatus = bazaAcc.GetCell(4,i);// берем значение ячейки статуса из таблицы
+	if(GetStatus == string.Empty){ //  проверка строки статуса
+		bazaAcc.SetCell(4,i,"Занят"); //присваеваем значение таблице
+		project.SendInfoToLog(" Взяли в работу  аккаунт " + bazaAcc.GetCell(0,i), true );
+		string GetCook = bazaAcc.GetCell(5,i);
+	if(GetCook == string.Empty){ 
+		bazaAcc.SetCell(5,i,string.Empty);
+		project.SendInfoToLog(" куки пустые проводим авторизацию");
+	}
+	string GetId = bazaAcc.GetCell(9,i);
+	if(GetId ==string.Empty){
+	bazaAcc.SetCell(9,i,string.Empty);
+	
+	}
+		 
+		break;
+		}	
+	}
+}
+
+
+string[] arrRowFields = bazaAcc.GetRow(intAccountRowNum).ToArray();
+	if (arrRowFields.Length<9) {
+	project.SendErrorToLog(String.Format("Не удалось получить данные аккаунта из таблицы (строка {0}). Завершаем работу", intAccountRowNum +1));
+	return "oki";
+		
+}
+	string strLogin = arrRowFields[0];
+	string strPass = arrRowFields[1];
+	string strProxy = arrRowFields[2];
+	string strUserAgent = arrRowFields[3];
+	string strStatus = arrRowFields[4];
+	string strCookie = arrRowFields[5];
+	string strLink = arrRowFields[6];
+	string strOpisanie = arrRowFields[7];
+	string strBio = arrRowFields[8];
+	string userLink = arrRowFields[9];
+	
+	
+	//обнуление переменной Profile.UserAgent
+	project.Profile.UserAgent = String.Empty;
+	//установка нового user agent
+	project.Profile.UserAgent = strUserAgent;
+	instance.SetProxy(strProxy);
+	instance.SetCookie(strCookie);
+	
+	
+	
+
+
+
+Tab1.Navigate("https://soundcloud.com/");
+Tab1.WaitDownloading();
+
+
+
+
+
+// авторизуемся
+
+wHelper.ClickElementXPath(Tab1,false,null,"//button[@class = 'g-opacity-transition frontHero__loginButton g-button-transparent-inverted sc-button sc-button-medium loginButton']",0,false);
+Tab1.WaitDownloading();
+wHelper.SetElementValueXPath(Tab1,true,null,"//input[@id = 'sign_in_up_email']",0,strLogin,"full",true,true);
+	Tab1.WaitDownloading();
+wHelper.ClickElementXPath(Tab1,true,null,".//button[@id = 'sign_in_up_submit']",0,true);
+Tab1.WaitDownloading();
+wHelper.SetElementValueXPath(Tab1,true,null,"//input[@id = 'enter_password_field']",0,strPass,"full",true,true);
+wHelper.ClickElementXPath(Tab1,true,null,"//button[@id = 'enter_password_submit']",0,true);
+project.SendInfoToLog(" авторизовались акаунтом ",strLogin);
+	System.Threading.Thread.Sleep(7000);
+	
+//поиск элемента профиля дляпонимания авторизовалсяли код
+HtmlElement ElProfile = Tab1.FindElementByXPath("//a[@class = 'header__userNavButton header__userNavUsernameButton']",0);
+if(ElProfile.IsVoid){
+	project.SendInfoToLog("сайт не прогрузился кнопки профиль  на сайте нет, проверьте прокси",true);
+	//здесьвыходим из акаунта по ссылке
+	Tab1.Navigate("https://soundcloud.com/logout");
+	return "Oke";
+}
+	
+
+	// берем куки
+	project.Profile.CookieContainer.Refresh();
+	string str = Encoding.UTF8.GetString(project.Profile.CookieContainer.Export());
+	bazaAcc.SetCell(5,intAccountRowNum,str); // записали куки в таблицу
+		// запишем ссылку на акаунт
+		//string url = instance.ActiveTab.URL;
+		string myUrl = Tab1.FindElementByXPath("//a[@class = 'header__userNavButton header__userNavUsernameButton']",0).GetAttribute("href");
+		bazaAcc.SetCell(9,intAccountRowNum,myUrl);
+		userLink = bazaAcc.GetCell(9,intAccountRowNum);
+		 strOpisanie = bazaAcc.GetCell(7,intAccountRowNum);
+		 strBio = bazaAcc.GetCell(8,intAccountRowNum);
+	//}
+
+
+//// это капча
+//wHelper.ClickElementXPath(Tab1,true,null,"//span[@id = 'recaptcha-anchor']",0,true);
+//HtmlElement elCaptcha = instance.ActiveTab.FindElementById("rc-imageselect-target");
+//string strCaptchaResult = ZennoPoster.CaptchaRecognition("RuCaptcha.dll", elCaptcha.DrawToBitmap(true), "");
+//strCaptchaResult = Regex.Split(strCaptchaResult, @"-|-")[0];
+//project.SendInfoToLog("Выполнено! Результат распознавания капчи: " + strCaptchaResult);
+
+ 
+    Tab1.Navigate(userLink);
+	Tab1.WaitDownloading();
+ 
+// лучше прогонять один акаунтом парсер если тру то идем парсить 
+	if(Parser == true){
+
+	instance.ActiveTab.Navigate( Linkes );
+	Tab1.WaitDownloading();
+
+
+	for(int i= 0 ;i<bigmore; i++){
+	HtmlElementCollection LinkeAcc =  Tab1.FindElementsByXPath("//li[@class = 'badgeList__item']");
+	//скролл до кноца старницы до эллемента
+	HtmlElement futer  = Tab1.FindElementByXPath("//a[@class = 'localeSelector sc-pointer']",0);
+	Tab1.FullEmulationMouseMoveToHtmlElement(futer);
+
+
+foreach (HtmlElement element in LinkeAcc.Elements ){
+	string Link = element.FindChildByXPath(".//a [@class = 'userBadgeListItem__image']",0).GetAttribute("href");
+	tblResult.AddRow(new String []{ Link });
+	project.SendInfoToLog(Link);
+	
+	}
+
+}
+		
+	
+	
+	}
+
+	//если  тру то значит стоит галочка что ссылки нудно установить 
+	if(FillLink == true ){
+		// клик на правку описаний
+	wHelper.ClickElementXPath(Tab1,true,null,".//button[contains (@class , 'hiddenLabelOnSmallScreen')]",0,true,EmulateKM:true);
+		
+	// жмем кнопку добавитьссылку
+		wHelper.ClickElementXPath(Tab1,true,null,"//button[@class = 'webProfilesControl__add sc-button sc-button-medium']",0,true);
+		// заполняемссылку
+	wHelper.ClickElementXPath(instance.ActiveTab,true,null,"//div[@class = 'textfield webProfileControl__url']//input[contains(@class , 'sc-input-medium')]  ",0,true);
+	wHelper.SetElementValueXPath(instance.ActiveTab,true,null,"//div[@class = 'textfield webProfileControl__url']//input[contains(@class , 'sc-input-medium')]  ",0,strLink,"Full",true,true);
+		// заполняем описание 
+	wHelper.ClickElementXPath(instance.ActiveTab,true,null,"//div[@class = 'textfield webProfileControl__title']//input[contains(@class , 'sc-input-medium')]  ",0,true);
+	wHelper.SetElementValueXPath(instance.ActiveTab,true,null,"//div[@class = 'textfield webProfileControl__title']//input[contains(@class , 'sc-input-medium')]  ",0,strOpisanie,"Full",true,true);
+		//заполняем био
+	wHelper.ClickElementXPath(instance.ActiveTab,true,null,".//textarea[contains(@id, 'formControl')]",0,true);
+	wHelper.SetElementValueXPath(instance.ActiveTab,true,null,".//textarea[contains(@id, 'formControl')]",0,strBio,"Full",true,true);
+	
+		//скрол страницы
+	HtmlElement Scroll  = Tab1.FindElementByXPath("//button[contains (@class , 'sc-button-cta sc-button')]",0);
+	Tab1.FullEmulationMouseMoveToHtmlElement(Scroll);
+		Tab1.WaitDownloading();
+		//жмем кнопку сохранить 
+	wHelper.ClickElementXPath(Tab1,true,null,".//button[contains (@class , 'sc-button-cta sc-button')]",0,true,EmulateKM:true);
+	project.SendInfoToLog("ссылки установлены и сохранены ");
+	}
+
+
+for(int a = 0; a < ColFolowww;a++)
+{
+string IdFollow = ListFolow[0];
+	if(IdFollow == string.Empty){
+	return "Закончились ссылки для фоловинга вышли из акаунта";
+		Tab1.Navigate("https://soundcloud.com/logout");
+		
+	}
+	project.SendInfoToLog("взяли юзера из списка  для фоловинга" + IdFollow);
+	Tab1.Navigate(IdFollow);
+	Tab1.WaitDownloading();
+	
+wHelper.ClickElementXPath(Tab1,true,null,".//div[@class = 'userInfoBar__buttons']//button[contains (@class ,'sc-button-follow')]",0,false);
+	ListFolow.RemoveAt(0);
+project.SendInfoToLog ("за фоловили и удилили юзера из списка " );
+
+System.Threading.Thread.Sleep(TimePause);
+};
+//здесь пишу выход из акаунта
+
+Tab1.Navigate("https://soundcloud.com/logout");
+project.SendInfoToLog(" работа закончена ");
